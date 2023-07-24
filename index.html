@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+  <meta charset='utf-8' >
+  <meta http-equiv='X-UA-Compatible' content='IE=edge'>
+  <meta name='viewport' content='width=device-width, initial-scale=1'>
+
+  <title>Bitcoin clock</title>
+  <meta name='author' content='4x0'>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@500&display=swap" rel="stylesheet">
+
+  <style>
+    body {
+      background: linear-gradient(
+        #222 calc(50% - 10vw),
+        #444 calc(50% - 10vw),
+        #444 calc(50% + 10vw),
+        #222 calc(50% + 10vw)
+      );
+      color: white;
+      font-family: 'Roboto Mono', monospace;
+      margin: 0;
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    #height {
+      font-size: 10vw;
+    }
+    #volume {
+      position: fixed;
+      bottom: 0;
+      right: 0;
+      margin: 32px;
+      display: block;
+      appearance: slider-vertical;
+    }
+  </style>
+</head>
+<body>
+  <div id="height">000000</div>
+  <input
+    id="volume"
+    type="range"
+    min="0"
+    max="100"
+    orient="vertical"
+  />
+  <p style="display: none;">I made this to make it easier to know when my transactions have confirmed</p>
+
+  <script>
+    const createPlay = () => {
+      const tickAudio = new Audio('./tick.m4a');
+
+      return volume => {
+        tickAudio.volume = volume;
+        tickAudio
+          .play()
+          .catch(() => alert("You need to enable autoplay permission for this app to work"));
+      };
+    };
+
+    const setHeight = height => {
+      document.querySelector("#height").textContent = height;
+    };
+
+    const getVolume = () => +document.querySelector("#volume").value / 100;
+    const createVolumeListener = cb => {
+      const volumeElem = document.querySelector("#volume");
+      const cbb = () => { cb(); }
+      volumeElem.addEventListener("change", cb);
+
+      return () => volumeElem.addEventListener("change", cb);
+    };
+
+    const getBlockHeight = async () => {
+      const res = await fetch("https://api.blockcypher.com/v1/btc/main");
+
+      if (res.ok) {
+        const { height } = await res.json();
+        return height;
+      } else {
+        throw new Error(`res is not ok`);
+      }
+    };
+    const createBlockHeightListener = cb => {
+      const TOKEN = "c0d25e17fc1a4e848d7b0eb57187ec1a";
+
+      const ws = new WebSocket(`wss://socket.blockcypher.com/v1/btc/main?token=${TOKEN}`);
+      ws.onmessage = (event) => {
+        const parsed = JSON.parse(event.data);
+        const { height } = parsed;
+
+        if (height) {
+          cb(height);
+        }
+      };
+      ws.onopen = event => {
+        ws.send(JSON.stringify({event: "new-block"}));
+      };
+      const pingIntervalId = setInterval(() => {
+        ws.send(JSON.stringify({ "event": "ping" }));
+      }, 20 * 1000);
+
+      return () => {
+        clearInterval(pingIntervalId);
+        ws.close();
+      };
+    };
+
+    window.addEventListener("load", event => {
+      setTimeout(() => {
+        const play = createPlay();
+
+        createBlockHeightListener(height => {
+          play(getVolume());
+          setHeight(height);
+        });
+        createVolumeListener(() => {
+          play(getVolume());
+        });
+
+        play(0.0001);
+        getBlockHeight()
+          .then(height => { setHeight(height); });
+      }, 500);
+    });
+  </script>
+</body>
+</html>
